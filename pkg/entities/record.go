@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"net"
 
 	"github.com/vmware/go-ipfix/pkg/util"
 )
@@ -33,6 +34,10 @@ import (
 type Record interface {
 	PrepareRecord() (uint16, error)
 	AddInfoElement(element *InfoElementWithValue, isDecoding bool) (uint16, error)
+	EncodeIPv4Address(ip net.IP) (uint16, error)
+	EncodeUint8(i uint8) (uint16, error)
+	EncodeUint16(i uint16) (uint16, error)
+	EncodeUint64(i uint64) (uint16, error)
 	// TODO: Functions for multiple elements as well.
 	GetBuffer() *bytes.Buffer
 	GetTemplateID() uint16
@@ -40,6 +45,7 @@ type Record interface {
 	GetOrderedElementList() []*InfoElementWithValue
 	GetInfoElementWithValue(name string) (*InfoElementWithValue, bool)
 	GetMinDataRecordLen() uint16
+	ResetRecord()
 }
 
 type baseRecord struct {
@@ -53,18 +59,22 @@ type baseRecord struct {
 }
 
 type dataRecord struct {
-	*baseRecord
+	baseRecord
 }
 
-func NewDataRecord(id uint16) *dataRecord {
-	return &dataRecord{
-		&baseRecord{
-			buff:               bytes.Buffer{},
-			len:                0,
-			fieldCount:         0,
-			templateID:         id,
-			orderedElementList: make([]*InfoElementWithValue, 0),
-			elementsMap:        make(map[string]*InfoElementWithValue),
+func (d *dataRecord) ResetRecord() {
+	d.baseRecord.ResetRecord()
+}
+
+func NewDataRecord(id uint16, buff bytes.Buffer) dataRecord {
+	return dataRecord{
+		baseRecord{
+			buff:       buff,
+			len:        0,
+			fieldCount: 0,
+			templateID: id,
+			// orderedElementList: make([]*InfoElementWithValue, 0),
+			// elementsMap:        make(map[string]*InfoElementWithValue),
 		},
 	}
 }
@@ -88,6 +98,12 @@ func NewTemplateRecord(count uint16, id uint16) *templateRecord {
 		},
 		0,
 	}
+}
+
+func (b *baseRecord) ResetRecord() {
+	b.buff.Reset()
+	b.len = 0
+	b.fieldCount = 0
 }
 
 func (b *baseRecord) GetBuffer() *bytes.Buffer {
@@ -119,26 +135,92 @@ func (d *dataRecord) PrepareRecord() (uint16, error) {
 	return 0, nil
 }
 
+func (d *dataRecord) EncodeIPv4Address(ip net.IP) (uint16, error) {
+	d.fieldCount++
+	initialLength := d.buff.Len()
+
+	//NOTE using direct buffer write method goes from 2 memory allocations per encode call down to 0(ish, depending on if buffer needs to grow)
+	_, err := d.buff.Write(ip) //write should follow Big Endian order
+	if err != nil {
+		return 0, err
+	}
+
+	return uint16(d.buff.Len() - initialLength), nil
+}
+
+func (d *dataRecord) EncodeUint8(i uint8) (uint16, error) {
+	d.fieldCount++
+	initialLength := d.buff.Len()
+
+	//NOTE using direct buffer write method goes from 2 memory allocations per encode call down to 0(ish, depending on if buffer needs to grow)
+
+	_, err := d.buff.Write([]byte{i}) //write should follow Big Endian order
+	if err != nil {
+		return 0, err
+	}
+
+	return uint16(d.buff.Len() - initialLength), nil
+}
+
+func (d *dataRecord) EncodeUint16(i uint16) (uint16, error) {
+	d.fieldCount++
+	initialLength := d.buff.Len()
+
+	//NOTE using direct buffer write method goes from 2 memory allocations per encode call down to 0(ish, depending on if buffer needs to grow)
+	byteArray := make([]byte, 2)
+	binary.BigEndian.PutUint16(byteArray, i)
+	_, err := d.buff.Write(byteArray) //write should follow Big Endian order
+	if err != nil {
+		return 0, err
+	}
+
+	return uint16(d.buff.Len() - initialLength), nil
+}
+
+func (d *dataRecord) EncodeUint64(i uint64) (uint16, error) {
+	d.fieldCount++
+	initialLength := d.buff.Len()
+
+	//NOTE using direct buffer write method goes from 2 memory allocations per encode call down to 0(ish, depending on if buffer needs to grow)
+	byteArray := make([]byte, 8)
+	binary.BigEndian.PutUint64(byteArray, i)
+	_, err := d.buff.Write(byteArray) //write should follow Big Endian order
+	if err != nil {
+		return 0, err
+	}
+
+	return uint16(d.buff.Len() - initialLength), nil
+}
+
+//NOTE recreating the info element
 func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bool) (uint16, error) {
 	d.fieldCount++
 	initialLength := d.buff.Len()
-	var value interface{}
+	// var value interface{}
 	var err error
+
+	//QUESTION is EncodeToIEDataType not just returning the same value that you pass in?
+	//If I pass in an element with a data type of uint16, it writes the uint16 to the buffer and then returns a uint16
+	//this then creates a new IE using the passed-in element data type, and the returned value which should be the same as element.Value
+	// Decode takes in a bytes buffer and returns a literal, so that seems to be doing something of use
+	//TODO try repalcing EncodeToIEDataType with just a func that writes the element to the buffer
 	if isDecoding {
-		value, err = DecodeToIEDataType(element.Element.DataType, element.Value)
+		_, err = DecodeToIEDataType(element.Element.DataType, element.Value)
 	} else {
-		value, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
+		_, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
 	}
 
 	if err != nil {
 		return 0, err
 	}
-	ie := NewInfoElementWithValue(element.Element, value)
-	d.orderedElementList = append(d.orderedElementList, ie)
-	d.elementsMap[element.Element.Name] = ie
-	if err != nil {
-		return 0, err
-	}
+	// ie := NewInfoElementWithValue(element.Element, value)
+
+	//NOTE adds 5 memory allocations/flow
+	// d.orderedElementList = append(d.orderedElementList, ie)
+	// d.elementsMap[element.Element.Name] = ie
+	// if err != nil {
+	// 	return 0, err
+	// }
 	return uint16(d.buff.Len() - initialLength), nil
 }
 
@@ -171,7 +253,7 @@ func (t *templateRecord) AddInfoElement(element *InfoElementWithValue, isDecodin
 			return 0, err
 		}
 	}
-	t.orderedElementList = append(t.orderedElementList, element)
+	// t.orderedElementList = append(t.orderedElementList, element)
 	t.elementsMap[element.Element.Name] = element
 	// Keep track of minimum data record length required for sanity check
 	if element.Element.Len == VariableLength {

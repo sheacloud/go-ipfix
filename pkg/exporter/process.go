@@ -99,16 +99,21 @@ func InitExportingProcess(collectorAddr net.Addr, obsID uint32, tempRefTimeout u
 }
 
 func (ep *ExportingProcess) AddSetAndSendMsg(setType entities.ContentType, set entities.Set) (int, error) {
-	for _, record := range set.GetRecords() {
-		if setType == entities.Template {
+	if setType == entities.Template {
+		for _, record := range set.GetRecords() {
 			ep.updateTemplate(record.GetTemplateID(), record.GetOrderedElementList(), record.GetMinDataRecordLen())
-		} else if setType == entities.Data {
-			err := ep.dataRecSanityCheck(record)
-			if err != nil {
-				return 0, fmt.Errorf("AddSetAndSendMsg: error when doing sanity check:%v", err)
-			}
 		}
 	}
+	// for _, record := range set.GetRecords() {
+	// 	if setType == entities.Template {
+	// 		ep.updateTemplate(record.GetTemplateID(), record.GetOrderedElementList(), record.GetMinDataRecordLen())
+	// 	} else if setType == entities.Data {
+	// 		err := ep.dataRecSanityCheck(record)
+	// 		if err != nil {
+	// 			return 0, fmt.Errorf("AddSetAndSendMsg: error when doing sanity check:%v", err)
+	// 		}
+	// 	}
+	// }
 
 	msgBuffer := ep.msg.GetMsgBuffer()
 	var bytesSent int

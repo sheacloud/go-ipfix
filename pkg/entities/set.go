@@ -44,10 +44,12 @@ type Set interface {
 	GetBuffLen() uint16
 	GetBuffer() *bytes.Buffer
 	GetSetType() ContentType
+	ResetBuffer()
 	FinishSet()
 	AddRecord(elements []*InfoElementWithValue, templateID uint16) error
 	GetRecords() []Record
 	GetNumberOfRecords() uint32
+	EncodeDataRecord(record dataRecord) error
 }
 
 type set struct {
@@ -82,6 +84,11 @@ func NewSet(setType ContentType, templateID uint16, isDecoding bool) Set {
 	}
 }
 
+func (s *set) ResetBuffer() {
+	s.buffer.Reset()
+	s.currLen = 0
+}
+
 func (s *set) GetBuffLen() uint16 {
 	return s.currLen
 }
@@ -106,10 +113,26 @@ func (s *set) FinishSet() {
 	}
 }
 
+func (s *set) EncodeDataRecord(record dataRecord) error {
+	// s.records = append(s.records, &record)
+	// write record to set when encoding
+	if !s.isDecoding {
+		recordBytes := record.GetBuffer().Bytes()
+		_, err := s.buffer.Write(recordBytes)
+		if err != nil {
+			return fmt.Errorf("error in writing the buffer to set: %v", err)
+		}
+		// Update the length of set
+		s.currLen = s.currLen + uint16(len(recordBytes))
+	}
+	return nil
+}
+
 func (s *set) AddRecord(elements []*InfoElementWithValue, templateID uint16) error {
 	var record Record
 	if s.setType == Data {
-		record = NewDataRecord(templateID)
+		tmp := NewDataRecord(templateID, bytes.Buffer{})
+		record = &tmp
 	} else if s.setType == Template {
 		record = NewTemplateRecord(uint16(len(elements)), templateID)
 	}
