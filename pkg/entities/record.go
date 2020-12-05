@@ -148,10 +148,10 @@ func (d *dataRecord) PrepareRecord() (uint16, error) {
 func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bool) (uint16, error) {
 	d.fieldCount++
 	initialLength := d.buff.Len()
-	// var value interface{}
+	var value interface{}
 	var err error
 	if isDecoding {
-		_, err = DecodeToIEDataType(element.Element.DataType, element.Value)
+		value, err = DecodeToIEDataType(element.Element.DataType, element.Value)
 	} else {
 		_, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
 	}
@@ -160,6 +160,9 @@ func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bo
 		return 0, err
 	}
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> b0e4e72... Added benchmark test file
 
 	//if we're decoding, we want an IE where the value is an actual literal, not a slice of bytes
 	if isDecoding {
@@ -169,6 +172,7 @@ func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bo
 		d.orderedElementList = append(d.orderedElementList, element)
 	}
 
+<<<<<<< HEAD
 =======
 	// ie := NewInfoElementWithValue(element.Element, value)
 	d.orderedElementList = append(d.orderedElementList, element)
@@ -178,6 +182,8 @@ func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bo
 =======
 	// d.elementsMap[element.Element.Name] = element
 >>>>>>> 1953b45... Rework record element fetching
+=======
+>>>>>>> b0e4e72... Added benchmark test file
 	if err != nil {
 		return 0, err
 	}
