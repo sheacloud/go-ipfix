@@ -297,28 +297,35 @@ func EncodeToIEDataType(dataType IEDataType, val interface{}, buff *bytes.Buffer
 		if !ok {
 			return nil, fmt.Errorf("val argument is not of type uint8")
 		}
-		err := util.Encode(buff, binary.BigEndian, v)
+		bytes := []byte{v}
+		_, err := buff.Write(bytes)
 		return v, err
 	case Unsigned16:
 		v, ok := val.(uint16)
 		if !ok {
 			return nil, fmt.Errorf("val argument is not of type uint16")
 		}
-		err := util.Encode(buff, binary.BigEndian, v)
+		bytes := make([]byte, 2)
+		binary.BigEndian.PutUint16(bytes, v)
+		_, err := buff.Write(bytes)
 		return v, err
 	case Unsigned32:
 		v, ok := val.(uint32)
 		if !ok {
 			return nil, fmt.Errorf("val argument is not of type uint32")
 		}
-		err := util.Encode(buff, binary.BigEndian, v)
+		bytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(bytes, v)
+		_, err := buff.Write(bytes)
 		return v, err
 	case Unsigned64:
 		v, ok := val.(uint64)
 		if !ok {
 			return nil, fmt.Errorf("val argument is not of type uint64")
 		}
-		err := util.Encode(buff, binary.BigEndian, v)
+		bytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(bytes, v)
+		_, err := buff.Write(bytes)
 		return v, err
 	case Signed8:
 		v, ok := val.(int8)
@@ -380,14 +387,18 @@ func EncodeToIEDataType(dataType IEDataType, val interface{}, buff *bytes.Buffer
 		if !ok {
 			return 0, fmt.Errorf("val argument is not of type uint32")
 		}
-		err := util.Encode(buff, binary.BigEndian, v)
+		bytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(bytes, v)
+		_, err := buff.Write(bytes)
 		return v, err
 	case DateTimeMilliseconds:
 		v, ok := val.(uint64)
 		if !ok {
 			return 0, fmt.Errorf("val argument is not of type uint64")
 		}
-		err := util.Encode(buff, binary.BigEndian, v)
+		bytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(bytes, v)
+		_, err := buff.Write(bytes)
 		return v, err
 		// Currently only supporting seconds and milliseconds
 	case DateTimeMicroseconds, DateTimeNanoseconds:
@@ -408,7 +419,7 @@ func EncodeToIEDataType(dataType IEDataType, val interface{}, buff *bytes.Buffer
 			return 0, fmt.Errorf("val argument is not of type net.IP for this element")
 		}
 		if ipv4Add := v.To4(); ipv4Add != nil {
-			err := util.Encode(buff, binary.BigEndian, ipv4Add)
+			_, err := buff.Write(ipv4Add) //write should follow Big Endian order
 			return ipv4Add, err
 		} else {
 			return 0, fmt.Errorf("provided IP does not belong to IPv4 address family")

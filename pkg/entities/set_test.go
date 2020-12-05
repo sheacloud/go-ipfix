@@ -27,9 +27,11 @@ func TestAddRecordIPv4Addresses(t *testing.T) {
 	elements = append(elements, ie1, ie2)
 	set.AddRecord(elements, 256)
 	infoElementWithValue, _ := set.GetRecords()[0].GetInfoElementWithValue("sourceIPv4Address")
-	assert.Equal(t, net.IP([]byte{0xa, 0x0, 0x0, 0x1}), infoElementWithValue.Value)
+
+	// Assert that the IP remains the same. set.AddRecord previously changed the byte array from the normal 16 bytes down to 4 bytes for ipv4 addresses before storing it, which is what GetInfoElementWithValue later calls
+	assert.True(t, net.IP([]byte{0xa, 0x0, 0x0, 0x1}).Equal(infoElementWithValue.Value.(net.IP)))
 	infoElementWithValue, _ = set.GetRecords()[0].GetInfoElementWithValue("destinationIPv4Address")
-	assert.Equal(t, net.IP([]byte{0xa, 0x0, 0x0, 0x2}), infoElementWithValue.Value)
+	assert.True(t, net.IP([]byte{0xa, 0x0, 0x0, 0x2}).Equal(infoElementWithValue.Value.(net.IP)))
 }
 
 func TestAddRecordIPv6Addresses(t *testing.T) {

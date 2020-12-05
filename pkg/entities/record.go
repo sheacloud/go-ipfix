@@ -122,20 +122,20 @@ func (d *dataRecord) PrepareRecord() (uint16, error) {
 func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bool) (uint16, error) {
 	d.fieldCount++
 	initialLength := d.buff.Len()
-	var value interface{}
+	// var value interface{}
 	var err error
 	if isDecoding {
-		value, err = DecodeToIEDataType(element.Element.DataType, element.Value)
+		_, err = DecodeToIEDataType(element.Element.DataType, element.Value)
 	} else {
-		value, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
+		_, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
 	}
 
 	if err != nil {
 		return 0, err
 	}
-	ie := NewInfoElementWithValue(element.Element, value)
-	d.orderedElementList = append(d.orderedElementList, ie)
-	d.elementsMap[element.Element.Name] = ie
+	// ie := NewInfoElementWithValue(element.Element, value)
+	d.orderedElementList = append(d.orderedElementList, element)
+	d.elementsMap[element.Element.Name] = element
 	if err != nil {
 		return 0, err
 	}
