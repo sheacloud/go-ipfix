@@ -48,7 +48,6 @@ type baseRecord struct {
 	fieldCount         uint16
 	templateID         uint16
 	orderedElementList []*InfoElementWithValue
-	elementsMap        map[string]*InfoElementWithValue
 	Record
 }
 
@@ -64,7 +63,6 @@ func NewDataRecord(id uint16) *dataRecord {
 			fieldCount:         0,
 			templateID:         id,
 			orderedElementList: make([]*InfoElementWithValue, 0),
-			elementsMap:        make(map[string]*InfoElementWithValue),
 		},
 	}
 }
@@ -84,7 +82,6 @@ func NewTemplateRecord(count uint16, id uint16) *templateRecord {
 			fieldCount:         count,
 			templateID:         id,
 			orderedElementList: make([]*InfoElementWithValue, 0),
-			elementsMap:        make(map[string]*InfoElementWithValue),
 		},
 		0,
 	}
@@ -102,16 +99,17 @@ func (b *baseRecord) GetFieldCount() uint16 {
 	return b.fieldCount
 }
 
-func (d *baseRecord) GetOrderedElementList() []*InfoElementWithValue {
-	return d.orderedElementList
+func (b *baseRecord) GetOrderedElementList() []*InfoElementWithValue {
+	return b.orderedElementList
 }
 
 func (b *baseRecord) GetInfoElementWithValue(name string) (*InfoElementWithValue, bool) {
-	if element, exist := b.elementsMap[name]; exist {
-		return element, exist
-	} else {
-		return nil, false
+	for _, element := range b.orderedElementList {
+		if element.Element.Name == name {
+			return element, true
+		}
 	}
+	return nil, false
 }
 
 func (d *dataRecord) PrepareRecord() (uint16, error) {
@@ -135,7 +133,7 @@ func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bo
 	}
 	// ie := NewInfoElementWithValue(element.Element, value)
 	d.orderedElementList = append(d.orderedElementList, element)
-	d.elementsMap[element.Element.Name] = element
+	// d.elementsMap[element.Element.Name] = element
 	if err != nil {
 		return 0, err
 	}
@@ -172,7 +170,6 @@ func (t *templateRecord) AddInfoElement(element *InfoElementWithValue, isDecodin
 		}
 	}
 	t.orderedElementList = append(t.orderedElementList, element)
-	t.elementsMap[element.Element.Name] = element
 	// Keep track of minimum data record length required for sanity check
 	if element.Element.Len == VariableLength {
 		t.minDataRecLength = t.minDataRecLength + 1
