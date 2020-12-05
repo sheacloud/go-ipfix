@@ -15,8 +15,8 @@ import (
 type AggregationProcess struct {
 	// flowKeyRecordMap maps each connection (5-tuple) with its records
 	flowKeyRecordMap map[FlowKey][]entities.Record
-	// flowKeyRecordLock allows multiple readers or one writer at the same time
-	flowKeyRecordLock sync.RWMutex
+	// mutex allows multiple readers or one writer at the same time
+	mutex sync.RWMutex
 	// messageChan is the channel to receive the message
 	messageChan chan *entities.Message
 	// workerNum is the number of workers to process the messages
@@ -37,50 +37,63 @@ type FlowKey struct {
 	DestinationPort    uint16
 }
 
+type AggregationInput struct {
+	MessageChan     chan *entities.Message
+	WorkerNum       int
+	CorrelateFields []string
+}
+
 type FlowKeyRecordMapCallBack func(key FlowKey, records []entities.Record) error
 
 // InitAggregationProcess takes in message channel (e.g. from collector) as input channel, workerNum(number of workers to process message)
 // and correlateFields (fields to be correlated and filled).
-func InitAggregationProcess(messageChan chan *entities.Message, workerNum int, correlateFields []string) (*AggregationProcess, error) {
-	if messageChan == nil {
-		return nil, fmt.Errorf("Cannot create AggregationProcess process without message channel.")
-	} else if workerNum <= 0 {
-		return nil, fmt.Errorf("Worker number cannot be <= 0.")
+func InitAggregationProcess(input AggregationInput) (*AggregationProcess, error) {
+	if input.MessageChan == nil {
+		return nil, fmt.Errorf("cannot create AggregationProcess process without message channel")
+	} else if input.WorkerNum <= 0 {
+		return nil, fmt.Errorf("worker number cannot be <= 0")
 	}
 	return &AggregationProcess{
 		make(map[FlowKey][]entities.Record),
 		sync.RWMutex{},
-		messageChan,
-		workerNum,
+		input.MessageChan,
+		input.WorkerNum,
 		make([]*worker, 0),
-		correlateFields,
+		input.CorrelateFields,
 		make(chan bool),
 	}, nil
 }
 
 func (a *AggregationProcess) Start() {
+	a.mutex.Lock()
 	for i := 0; i < a.workerNum; i++ {
 		w := createWorker(i, a.messageChan, a.AggregateMsgByFlowKey)
 		w.start()
 		a.workerList = append(a.workerList, w)
 	}
+	a.mutex.Unlock()
 	<-a.stopChan
 }
 
 func (a *AggregationProcess) Stop() {
+	a.mutex.Lock()
 	for _, worker := range a.workerList {
 		worker.stop()
 	}
+	a.mutex.Unlock()
 	a.stopChan <- true
 }
 
 // AggregateMsgByFlowKey gets flow key from records in message and stores in cache
 func (a *AggregationProcess) AggregateMsgByFlowKey(message *entities.Message) error {
-	addOriginalExporterInfo(message)
-	if message.Set.GetSetType() == entities.Template { // skip template records
+	if err := addOriginalExporterInfo(message); err != nil {
+		return err
+	}
+	set := message.GetSet()
+	if set.GetSetType() == entities.Template { // skip template records
 		return nil
 	}
-	records := message.Set.GetRecords()
+	records := set.GetRecords()
 	for _, record := range records {
 		flowKey, err := getFlowKeyFromRecord(record)
 		if err != nil {
@@ -93,8 +106,8 @@ func (a *AggregationProcess) AggregateMsgByFlowKey(message *entities.Message) er
 
 // ForAllRecordsDo takes in callback function to process the operations to flowkey->records pairs in the map
 func (a *AggregationProcess) ForAllRecordsDo(callback FlowKeyRecordMapCallBack) error {
-	a.flowKeyRecordLock.RLock()
-	defer a.flowKeyRecordLock.RUnlock()
+	a.mutex.RLock()
+	defer a.mutex.RUnlock()
 	for k, v := range a.flowKeyRecordMap {
 		err := callback(k, v)
 		if err != nil {
@@ -106,15 +119,15 @@ func (a *AggregationProcess) ForAllRecordsDo(callback FlowKeyRecordMapCallBack) 
 }
 
 func (a *AggregationProcess) DeleteFlowKeyFromMap(flowKey FlowKey) {
-	a.flowKeyRecordLock.Lock()
-	defer a.flowKeyRecordLock.Unlock()
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
 	delete(a.flowKeyRecordMap, flowKey)
 }
 
 // correlateRecords fills records info by correlating incoming and current records
 func (a *AggregationProcess) correlateRecords(flowKey FlowKey, record entities.Record) {
-	a.flowKeyRecordLock.Lock()
-	defer a.flowKeyRecordLock.Unlock()
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
 	existingRecords := a.flowKeyRecordMap[flowKey]
 	// only fill the information for record from source node
 	if isRecordFromSrc(record) {
@@ -265,26 +278,37 @@ func getFlowKeyFromRecord(record entities.Record) (*FlowKey, error) {
 	return flowKey, nil
 }
 
-// addOriginalExporterInfo adds originalExporterIPv4Address and originalObservationDomainId to records in message set
+// addOriginalExporterInfo adds originalExporterIP and originalObservationDomainId to records in message set
 func addOriginalExporterInfo(message *entities.Message) error {
-	set := message.Set
+	isIPv4 := false
+	exporterIP := net.ParseIP(message.GetExportAddress())
+	if exporterIP.To4() != nil {
+		isIPv4 = true
+	}
+	set := message.GetSet()
 	records := set.GetRecords()
 	for _, record := range records {
-		var originalExporterIPv4Address, originalObservationDomainId *entities.InfoElementWithValue
-
-		// Add originalExporterIPv4Address
-		ie, err := registry.GetInfoElement("originalExporterIPv4Address", registry.IANAEnterpriseID)
-		if err != nil {
-			return fmt.Errorf("IANA Registry is not loaded correctly with originalExporterIPv4Address.")
-		}
-		if set.GetSetType() == entities.Template {
-			originalExporterIPv4Address = entities.NewInfoElementWithValue(ie, nil)
-		} else if set.GetSetType() == entities.Data {
-			originalExporterIPv4Address = entities.NewInfoElementWithValue(ie, net.ParseIP(message.ExportAddress))
+		var originalExporterIP, originalObservationDomainId *entities.InfoElementWithValue
+		var ie *entities.InfoElement
+		var err error
+		// Add originalExporterIP. Supports both IPv4 and IPv6.
+		if isIPv4 {
+			ie, err = registry.GetInfoElement("originalExporterIPv4Address", registry.IANAEnterpriseID)
 		} else {
-			return fmt.Errorf("Set type %d is not supported.", set.GetSetType())
+			ie, err = registry.GetInfoElement("originalExporterIPv6Address", registry.IANAEnterpriseID)
 		}
-		_, err = record.AddInfoElement(originalExporterIPv4Address, false)
+		if err != nil {
+			return err
+		}
+
+		if set.GetSetType() == entities.Template {
+			originalExporterIP = entities.NewInfoElementWithValue(ie, nil)
+		} else if set.GetSetType() == entities.Data {
+			originalExporterIP = entities.NewInfoElementWithValue(ie, net.ParseIP(message.GetExportAddress()))
+		} else {
+			return fmt.Errorf("set type %d is not supported", set.GetSetType())
+		}
+		_, err = record.AddInfoElement(originalExporterIP, false)
 		if err != nil {
 			return err
 		}
@@ -292,14 +316,14 @@ func addOriginalExporterInfo(message *entities.Message) error {
 		// Add originalObservationDomainId
 		ie, err = registry.GetInfoElement("originalObservationDomainId", registry.IANAEnterpriseID)
 		if err != nil {
-			return fmt.Errorf("IANA Registry is not loaded correctly with originalObservationDomainId.")
+			return fmt.Errorf("IANA Registry is not loaded correctly with originalObservationDomainId")
 		}
 		if set.GetSetType() == entities.Template {
 			originalObservationDomainId = entities.NewInfoElementWithValue(ie, nil)
 		} else if set.GetSetType() == entities.Data {
-			originalObservationDomainId = entities.NewInfoElementWithValue(ie, message.ObsDomainID)
+			originalObservationDomainId = entities.NewInfoElementWithValue(ie, message.GetObsDomainID())
 		} else {
-			return fmt.Errorf("Set type %d is not supported.", set.GetSetType())
+			return fmt.Errorf("set type %d is not supported", set.GetSetType())
 		}
 		_, err = record.AddInfoElement(originalObservationDomainId, false)
 		if err != nil {

@@ -62,23 +62,11 @@ func (mr *MockSetMockRecorder) AddRecord(arg0, arg1 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddRecord", reflect.TypeOf((*MockSet)(nil).AddRecord), arg0, arg1)
 }
 
-// FinishSet mocks base method
-func (m *MockSet) FinishSet() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "FinishSet")
-}
-
-// FinishSet indicates an expected call of FinishSet
-func (mr *MockSetMockRecorder) FinishSet() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinishSet", reflect.TypeOf((*MockSet)(nil).FinishSet))
-}
-
 // GetBuffLen mocks base method
-func (m *MockSet) GetBuffLen() uint16 {
+func (m *MockSet) GetBuffLen() int {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetBuffLen")
-	ret0, _ := ret[0].(uint16)
+	ret0, _ := ret[0].(int)
 	return ret0
 }
 
@@ -142,4 +130,16 @@ func (m *MockSet) GetSetType() entities.ContentType {
 func (mr *MockSetMockRecorder) GetSetType() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSetType", reflect.TypeOf((*MockSet)(nil).GetSetType))
+}
+
+// UpdateLenInHeader mocks base method
+func (m *MockSet) UpdateLenInHeader() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "UpdateLenInHeader")
+}
+
+// UpdateLenInHeader indicates an expected call of UpdateLenInHeader
+func (mr *MockSetMockRecorder) UpdateLenInHeader() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLenInHeader", reflect.TypeOf((*MockSet)(nil).UpdateLenInHeader))
 }

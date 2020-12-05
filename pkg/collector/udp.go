@@ -16,54 +16,106 @@ package collector
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/pion/dtls/v2"
 	"k8s.io/klog"
 
 	"github.com/vmware/go-ipfix/pkg/entities"
 )
 
 func (cp *CollectingProcess) startUDPServer() {
-	s, err := net.ResolveUDPAddr("udp", cp.address.String())
-	if err != nil {
-		klog.Error(err)
-		return
-	}
-	conn, err := net.ListenUDP("udp", s)
-	if err != nil {
-		klog.Error(err)
-		return
-	}
-	klog.Infof("Start %s collecting process on %s", cp.address.Network(), cp.address.String())
+	var listener net.Listener
+	var err error
+	var conn net.Conn
 	var wg sync.WaitGroup
-	defer conn.Close()
-	go func() {
-		for {
-			buff := make([]byte, cp.maxBufferSize)
-			size, address, err := conn.ReadFromUDP(buff)
-			if err != nil {
-				if size == 0 { // received stop collector message
+	address, err := net.ResolveUDPAddr(cp.address.Network(), cp.address.String())
+	if err != nil {
+		klog.Error(err)
+		return
+	}
+	if cp.isEncrypted { // use DTLS
+		cert, err := tls.X509KeyPair(cp.serverCert, cp.serverKey)
+		if err != nil {
+			klog.Error(err)
+			return
+		}
+		certPool := x509.NewCertPool()
+		certPool.AppendCertsFromPEM(cp.serverCert)
+		config := &dtls.Config{
+			Certificates:         []tls.Certificate{cert},
+			ExtendedMasterSecret: dtls.RequireExtendedMasterSecret,
+			ClientCAs:            certPool,
+		}
+		listener, err = dtls.Listen("udp", address, config)
+		if err != nil {
+			klog.Error(err)
+			return
+		}
+		cp.updateAddress(listener.Addr())
+		klog.Infof("Start dtls collecting process on %s", cp.address.String())
+		conn, err = listener.Accept()
+		if err != nil {
+			klog.Error(err)
+			return
+		}
+		defer conn.Close()
+		go func() {
+			for {
+				buff := make([]byte, cp.maxBufferSize)
+				size, err := conn.Read(buff)
+				if err != nil {
+					if size == 0 { // received stop collector message
+						return
+					}
+					klog.Errorf("Error in collecting process: %v", err)
 					return
 				}
-				klog.Errorf("Error in collecting process: %v", err)
-				return
+				address, err = net.ResolveUDPAddr(conn.LocalAddr().Network(), conn.LocalAddr().String())
+				if err != nil {
+					klog.Errorf("Error in dtls collecting process: %v", err)
+					return
+				}
+				klog.V(2).Infof("Receiving %d bytes from %s", size, address.String())
+				cp.handleUDPClient(address, &wg)
+				cp.clients[address.String()].packetChan <- bytes.NewBuffer(buff[0:size])
 			}
-			klog.V(2).Infof("Receiving %d bytes from %s", size, address.String())
-			cp.handleUDPClient(address, &wg)
-			cp.clients[address.String()].packetChan <- bytes.NewBuffer(buff[0:size])
+		}()
+	} else { // use udp
+		conn, err := net.ListenUDP("udp", address)
+		if err != nil {
+			klog.Error(err)
+			return
 		}
-	}()
-	select {
-	case <-cp.stopChan:
-		// stop all the workers before closing collector
-		for _, client := range cp.clients {
-			client.errChan <- true
-		}
-		wg.Wait()
-		return
+		cp.updateAddress(conn.LocalAddr())
+		klog.Infof("Start %s collecting process on %s", cp.address.Network(), cp.address.String())
+		var wg sync.WaitGroup
+		defer conn.Close()
+		go func() {
+			for {
+				buff := make([]byte, cp.maxBufferSize)
+				size, address, err := conn.ReadFromUDP(buff)
+				if err != nil {
+					if size == 0 { // received stop collector message
+						return
+					}
+					klog.Errorf("Error in udp collecting process: %v", err)
+					return
+				}
+				klog.V(2).Infof("Receiving %d bytes from %s", size, address.String())
+				cp.handleUDPClient(address, &wg)
+				cp.clients[address.String()].packetChan <- bytes.NewBuffer(buff[0:size])
+			}
+		}()
 	}
+	<-cp.stopChan
+	// stop all the workers before closing collector
+	cp.closeAllClients()
+	wg.Wait()
 }
 
 func (cp *CollectingProcess) handleUDPClient(address net.Addr, wg *sync.WaitGroup) {
@@ -81,7 +133,7 @@ func (cp *CollectingProcess) handleUDPClient(address net.Addr, wg *sync.WaitGrou
 					return
 				case <-ticker.C: // set timeout for udp connection
 					klog.Errorf("UDP connection from %s timed out.", address.String())
-					cp.deleteClient(address.Network())
+					cp.deleteClient(address.String())
 					return
 				case packet := <-client.packetChan:
 					// get the message here
