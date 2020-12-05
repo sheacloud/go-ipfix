@@ -172,8 +172,12 @@ func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bo
 =======
 	// ie := NewInfoElementWithValue(element.Element, value)
 	d.orderedElementList = append(d.orderedElementList, element)
+<<<<<<< HEAD
 	d.elementsMap[element.Element.Name] = element
 >>>>>>> bf295be... Encoding optimizations
+=======
+	// d.elementsMap[element.Element.Name] = element
+>>>>>>> 1953b45... Rework record element fetching
 	if err != nil {
 		return 0, err
 	}
