@@ -131,17 +131,18 @@ func TestAddInfoElements(t *testing.T) {
 
 func TestGetInfoElementWithValue(t *testing.T) {
 	templateRec := NewTemplateRecord(1, 256)
-	templateRec.elementsMap = make(map[string]*InfoElementWithValue)
+	templateRec.orderedElementList = make([]*InfoElementWithValue, 0)
 	ie := NewInfoElementWithValue(NewInfoElement("sourceIPv4Address", 8, 18, 0, 4), nil)
-	templateRec.elementsMap["sourceIPv4Address"] = ie
+	templateRec.orderedElementList = append(templateRec.orderedElementList, ie)
 	_, exist := templateRec.GetInfoElementWithValue("sourceIPv4Address")
 	assert.Equal(t, true, exist)
 	_, exist = templateRec.GetInfoElementWithValue("destinationIPv4Address")
 	assert.Equal(t, false, exist)
+
 	dataRec := NewDataRecord(256)
-	dataRec.elementsMap = make(map[string]*InfoElementWithValue)
+	dataRec.orderedElementList = make([]*InfoElementWithValue, 0)
 	ie = NewInfoElementWithValue(NewInfoElement("sourceIPv4Address", 8, 18, 0, 4), net.ParseIP("10.0.0.1"))
-	dataRec.elementsMap["sourceIPv4Address"] = ie
+	dataRec.orderedElementList = append(dataRec.orderedElementList, ie)
 	infoElementWithValue, _ := dataRec.GetInfoElementWithValue("sourceIPv4Address")
 	assert.Equal(t, net.ParseIP("10.0.0.1"), infoElementWithValue.Value)
 	infoElementWithValue, _ = dataRec.GetInfoElementWithValue("destinationIPv4Address")
