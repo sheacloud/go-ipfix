@@ -1,10 +1,14 @@
 //Can be run with go test -bench=. -benchmem -cpuprofile cpu.out -memprofile mem.out while in this directory
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 package test
 =======
 package main
 >>>>>>> b0e4e72... Added benchmark test file
+=======
+package test
+>>>>>>> 1edd2ba... Add IEs to Record in bulk
 
 import (
 	"net"
