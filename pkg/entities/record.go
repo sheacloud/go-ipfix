@@ -44,7 +44,6 @@ type Record interface {
 
 type baseRecord struct {
 	buff               bytes.Buffer
-	len                uint16
 	fieldCount         uint16
 	templateID         uint16
 	orderedElementList []*InfoElementWithValue
@@ -59,12 +58,42 @@ func NewDataRecord(id uint16) *dataRecord {
 	return &dataRecord{
 		&baseRecord{
 			buff:               bytes.Buffer{},
-			len:                0,
 			fieldCount:         0,
 			templateID:         id,
 			orderedElementList: make([]*InfoElementWithValue, 0),
 		},
 	}
+}
+
+func NewDataRecordFromElements(id uint16, elements []*InfoElementWithValue, isDecoding bool) *dataRecord {
+	if len(elements) > 65356 {
+		return nil
+	}
+	dataRecord := dataRecord{
+		&baseRecord{
+			buff:       bytes.Buffer{},
+			fieldCount: uint16(len(elements)),
+			templateID: id,
+		},
+	}
+
+	if isDecoding {
+		dataRecord.orderedElementList = make([]*InfoElementWithValue, len(elements))
+	} else {
+		dataRecord.orderedElementList = elements
+	}
+
+	for i, element := range elements {
+		if isDecoding {
+			value, _ := DecodeToIEDataType(element.Element.DataType, element.Value)
+			ie := NewInfoElementWithValue(element.Element, value)
+			dataRecord.orderedElementList[i] = ie
+		} else {
+			EncodeToIEDataType(element.Element.DataType, element.Value, &dataRecord.buff)
+		}
+	}
+
+	return &dataRecord
 }
 
 type templateRecord struct {
@@ -78,7 +107,6 @@ func NewTemplateRecord(count uint16, id uint16) *templateRecord {
 	return &templateRecord{
 		&baseRecord{
 			buff:               bytes.Buffer{},
-			len:                0,
 			fieldCount:         count,
 			templateID:         id,
 			orderedElementList: make([]*InfoElementWithValue, 0),
