@@ -161,7 +161,7 @@ func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bo
 	if isDecoding {
 		value, err = DecodeToIEDataType(element.Element.DataType, element.Value)
 	} else {
-		_, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
+		err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
 	}
 
 	if err != nil {
