@@ -69,6 +69,40 @@ func NewDataRecord(id uint16) *dataRecord {
 	}
 }
 
+func NewDataRecordFromElements(id uint16, elements []*InfoElementWithValue, isDecoding bool) *dataRecord {
+	if len(elements) > 65356 {
+		return nil
+	}
+	dataRecord := dataRecord{
+		&baseRecord{
+			buff:        bytes.Buffer{},
+			fieldCount:  uint16(len(elements)),
+			templateID:  id,
+			elementsMap: make(map[string]*InfoElementWithValue, len(elements)),
+		},
+	}
+
+	if isDecoding {
+		dataRecord.orderedElementList = make([]*InfoElementWithValue, len(elements))
+	} else {
+		dataRecord.orderedElementList = elements
+	}
+
+	for i, element := range elements {
+		if isDecoding {
+			value, _ := DecodeToIEDataType(element.Element.DataType, element.Value)
+			ie := NewInfoElementWithValue(element.Element, value)
+			dataRecord.orderedElementList[i] = ie
+			dataRecord.elementsMap[element.Element.Name] = ie
+		} else {
+			EncodeToIEDataType(element.Element.DataType, element.Value, &dataRecord.buff)
+			dataRecord.elementsMap[element.Element.Name] = element
+		}
+	}
+
+	return &dataRecord
+}
+
 type templateRecord struct {
 	*baseRecord
 	// Minimum data record length required to be sent for this template.
@@ -127,18 +161,23 @@ func (d *dataRecord) AddInfoElement(element *InfoElementWithValue, isDecoding bo
 	if isDecoding {
 		value, err = DecodeToIEDataType(element.Element.DataType, element.Value)
 	} else {
-		value, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
+		_, err = EncodeToIEDataType(element.Element.DataType, element.Value, &d.buff)
 	}
 
 	if err != nil {
 		return 0, err
 	}
-	ie := NewInfoElementWithValue(element.Element, value)
-	d.orderedElementList = append(d.orderedElementList, ie)
-	d.elementsMap[element.Element.Name] = ie
-	if err != nil {
-		return 0, err
+
+	// only need to create IE with "real" value if decoding, where the IE points to a byte slice
+	if isDecoding {
+		ie := NewInfoElementWithValue(element.Element, value)
+		d.orderedElementList = append(d.orderedElementList, ie)
+		d.elementsMap[element.Element.Name] = ie
+	} else {
+		d.orderedElementList = append(d.orderedElementList, element)
+		d.elementsMap[element.Element.Name] = element
 	}
+
 	return uint16(d.buff.Len() - initialLength), nil
 }
 
